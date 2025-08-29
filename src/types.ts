@@ -1,0 +1,12 @@
+export type Role = "admin"|"driver";
+export type User = { id:string; email:string; password:string; name:string; role:Role };
+export type Truck = { id:string; reg:string; trailerId?:string };
+export type Assignment = { driverId:string; truckId:string };
+export type ItemStatus = "UNCHECKED"|"OK"|"DEFECT";
+export type ChecklistItem = { id:string; label:string; status:ItemStatus; notes?:string };
+export type Defect = { id:string; time:string; area:string; description:string; truckStopped:boolean; status:"Zgłoszono"|"W trakcie"|"Naprawione"; archived?:boolean };
+export type OdoRec = { start?:string; end?:string; lastEnd?:string };
+export type AttendanceDay = { clockInISO?:string; clockOutISO?:string };
+export type DriverProfile = { name:string; driverId:string; phone:string };
+export type DriverState = { profile:DriverProfile; items:ChecklistItem[]; defects:Defect[]; odoByTruck?:Record<string,OdoRec>; startInfo:{odoStart:string;fuelLevel:string;notes:string}; endInfo:{odoEnd:string;refuel:string;notes:string}; morningSubmittedDate?:string; lastEndOdo?:string; attendance?:Record<string,AttendanceDay> };
+export type Task = { id:string; title:string; address?:string; description?:string; createdAt:string; done?:boolean };

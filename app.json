@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "kierowcaapp",
+    "slug": "kierowcaapp",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "bundleIdentifier": "com.threedelivery.kierowcaapp",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.threedelivery.kierowcaapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c49105ca-8c92-4a5b-9f1a-2007200b318f"
+      }
+    },
+    "owner": "derkin"
+  }
+}
