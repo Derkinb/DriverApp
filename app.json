@@ -2,14 +2,17 @@
   "expo": {
     "name": "kierowcaapp",
     "slug": "kierowcaapp",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+
     "ios": {
       "bundleIdentifier": "com.threedelivery.kierowcaapp",
       "supportsTablet": true,
@@ -17,6 +20,7 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
+
     "android": {
       "package": "com.threedelivery.kierowcaapp",
       "adaptiveIcon": {
@@ -24,21 +28,27 @@
         "backgroundColor": "#ffffff"
       }
     },
+
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
+
+    "owner": "derkin",
+
     "extra": {
       "eas": {
         "projectId": "c49105ca-8c92-4a5b-9f1a-2007200b318f"
       }
     },
-    "owner": "derkin",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+
+    "runtimeVersion": { "policy": "appVersion" },
+
     "updates": {
-      "url": "https://u.expo.dev/c49105ca-8c92-4a5b-9f1a-2007200b318f"
+      "url": "https://u.expo.dev/c49105ca-8c92-4a5b-9f1a-2007200b318f",
+      "enabled": true,
+      "checkOnLaunch": "ALWAYS",
+      "fallbackToCacheTimeout": 0
     }
   }
 }

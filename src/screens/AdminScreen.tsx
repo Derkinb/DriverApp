@@ -12,6 +12,9 @@ import {
 } from "react-native";
 import { styles as s, COLORS as C } from "../constants";
 import { cloud } from "../backend/client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { STORAGE } from "../storage";
+import { useNavigation } from "@react-navigation/native";
 
 type Driver = { id: string; name: string; email: string };
 type Truck  = { id: string; reg: string; trailer_id?: string | null };
@@ -47,6 +50,8 @@ export default function AdminScreen() {
   const [taskDesc, setTaskDesc]   = useState("");
 
   const [loading, setLoading] = useState(false);
+
+  const nav = useNavigation();
 
   // ===== pobranie danych z Supabase (drivers, trucks, assignments, defects) =====
   useEffect(() => {
@@ -117,6 +122,20 @@ export default function AdminScreen() {
     if (data) setTasks(data as any);
   }
 
+  // ===== wylogowanie =====
+  const handleLogout = async () => {
+    try {
+      await cloud.client?.auth.signOut();
+    } catch (e) {
+      console.log("signOut error", e);
+    } finally {
+      try { await AsyncStorage.removeItem(STORAGE.SESSION); } catch {}
+      // reset do ekranu logowania (React Navigation)
+      // @ts-ignore
+      nav.reset?.({ index: 0, routes: [{ name: "Login" }] });
+    }
+  };
+
   // ===== UI =====
   return (
     <ScrollView style={s.screen} contentContainerStyle={s.container}>
@@ -185,6 +204,20 @@ export default function AdminScreen() {
             );
           })}
           {!assignments.length && <Text style={{ color: C.sub }}>Brak przypisań</Text>}
+
+          {/* separator */}
+          <View style={{ height: 12 }} />
+
+          {/* WYLOGUJ — na samym dole panelu PRZYPISANIA */}
+          <Pressable
+            onPress={handleLogout}
+            style={[s.button, { backgroundColor: "#ef4444", borderColor: "#ef4444", marginTop: 6 }]}
+          >
+            <Text style={s.buttonText}>Wyloguj</Text>
+          </Pressable>
+          <Text style={{ color: C.sub, fontSize: 12, textAlign: "center", marginTop: 6 }}>
+            Zamyka sesję i wraca do logowania
+          </Text>
         </View>
       )}
 
