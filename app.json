@@ -33,6 +33,12 @@
         "projectId": "c49105ca-8c92-4a5b-9f1a-2007200b318f"
       }
     },
-    "owner": "derkin"
+    "owner": "derkin",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c49105ca-8c92-4a5b-9f1a-2007200b318f"
+    }
   }
 }

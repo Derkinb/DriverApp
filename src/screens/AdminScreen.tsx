@@ -10,7 +10,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { s, COLORS as C } from "../constants";
+import { styles as s, COLORS as C } from "../constants";
 import { cloud } from "../backend/client";
 
 type Driver = { id: string; name: string; email: string };

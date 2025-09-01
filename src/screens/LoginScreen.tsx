@@ -4,8 +4,9 @@ import { styles as s, COLORS as C } from "../constants";
 
 
 export default function LoginScreen({ onLogin }:{ onLogin:(email:string,pass:string)=>void }){
-  const [email,setEmail] = useState("admin@demo.com");
-  const [pass,setPass] = useState("admin");
+    const [email, setEmail] = useState("");
+    const [pass,  setPass]  = useState("");
+
   return (
     <SafeAreaView style={[s.screen,s.safe]}>
       <View style={s.header}><Text style={s.headerTitle}>KierowcaApp {Platform.OS==='ios'?'':'⚙︎'} — Logowanie</Text></View>
@@ -18,7 +19,6 @@ export default function LoginScreen({ onLogin }:{ onLogin:(email:string,pass:str
           <View style={{height:12}} />
           <Pressable onPress={()=>onLogin(email,pass)} style={[s.button,s.buttonPrimary]}><Text style={s.buttonText}>Zaloguj</Text></Pressable>
           <View style={{height:8}} />
-          <Text style={{color:C.sub,fontSize:12}}>Demo: admin@demo.com / admin, driver1@demo.com / driver</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
