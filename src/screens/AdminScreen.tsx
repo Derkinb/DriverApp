@@ -1,150 +1,289 @@
 import React, { useEffect, useState } from "react";
-import { SafeAreaView, View, Text, ScrollView, Pressable, TextInput, Alert } from "react-native";
-import { User, Assignment, DriverState, Task } from "../types";
-import { styles as s, COLORS as C } from "../constants";
-import PickerSimple from "../components/PickerSimple";
-import { USERS, TRUCKS, STORAGE, todayStr } from "../storage";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import AdminDefects from "../admin/AdminDefects";
+import {
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Platform,
+} from "react-native";
+import { s, COLORS as C } from "../constants";
+import { cloud } from "../backend/client";
 
-export default function AdminScreen({ user, assignments, setAssignments, onLogout }:{ user:User; assignments:Assignment[]; setAssignments:(a:Assignment[])=>void; onLogout:()=>void }){
-  const drivers = USERS.filter(u=>u.role==="driver");
-  const [adminTab, setAdminTab] = useState<"Przypisania"|"Postępy"|"Defekty"|"Zadania">("Przypisania");
-  const [selectedDriver,setSelectedDriver] = useState<string>(drivers[0]?.id ?? "");
-  const [selectedTruck,setSelectedTruck] = useState<string>(TRUCKS[0]?.id ?? "");
-  const getAssignedTruckId=(driverId:string)=> assignments.find(a=>a.driverId===driverId)?.truckId;
+type Driver = { id: string; name: string; email: string };
+type Truck  = { id: string; reg: string; trailer_id?: string | null };
+type Assign = { driver_id: string; truck_id: string | null };
+type Defect = {
+  id: string; time: string; driver_id: string; truck_id: string | null;
+  area: string; description?: string | null; truck_stopped: boolean;
+  status: "Zgłoszono" | "W trakcie" | "Naprawione"; archived: boolean;
+};
+type Task = {
+  id: string; driver_id: string; title: string; address?: string | null;
+  description?: string | null; done: boolean; created_at: string;
+};
 
-  const assign=()=>{
-    if(!selectedDriver){ Alert.alert("Brak kierowcy","Wybierz kierowcę."); return; }
-    if(!selectedTruck){ Alert.alert("Brak pojazdu","Wybierz ciężarówkę."); return; }
-    const rest = assignments.filter(a=>a.driverId!==selectedDriver);
-    setAssignments([...rest, { driverId:selectedDriver, truckId:selectedTruck }]);
-    Alert.alert("Zapisano","Przypisanie zaktualizowane.");
-  };
+type Tab = "assign" | "defects" | "tasks";
 
-  const [progress, setProgress] = useState<Record<string, DriverState>>({});
-  const loadProgress = async()=>{
-    const all: Record<string, DriverState> = {};
-    for (const d of drivers){
-      const raw = await AsyncStorage.getItem(STORAGE.DRIVER_STATE_PREFIX + d.id);
-      if(raw) try{ all[d.id] = JSON.parse(raw) as DriverState; }catch{}
-    }
-    setProgress(all);
-  };
-  useEffect(()=>{ loadProgress(); },[]);
-  useEffect(()=>{ if(adminTab !== "Postępy") return; const t=setInterval(loadProgress,4000); return ()=>clearInterval(t); },[adminTab]);
+export default function AdminScreen() {
+  const [tab, setTab] = useState<Tab>("assign");
 
-  // Tasks
+  // dane
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [trucks, setTrucks]   = useState<Truck[]>([]);
+  const [assignments, setAssignments] = useState<Assign[]>([]);
+  const [defects, setDefects] = useState<Defect[]>([]);
+  const [tasks, setTasks]     = useState<Task[]>([]);
+
+  // formularze
+  const [selDriver, setSelDriver] = useState("");
+  const [selTruck, setSelTruck]   = useState("");
+  const [taskFor, setTaskFor]     = useState("");
   const [taskTitle, setTaskTitle] = useState("");
-  const [taskAddress, setTaskAddress] = useState("");
-  const [taskDesc, setTaskDesc] = useState("");
-  const [tasksForSelected, setTasksForSelected] = useState<Task[]>([]);
-  const TASKS_KEY = (driverId:string)=> STORAGE.TASKS_PREFIX + driverId;
-  const loadTasksFor = async (driverId:string)=>{ const raw=await AsyncStorage.getItem(TASKS_KEY(driverId)); setTasksForSelected(raw? JSON.parse(raw): []); };
-  useEffect(()=>{ if(selectedDriver) loadTasksFor(selectedDriver); },[selectedDriver, adminTab]);
-  const saveTasksFor = async (driverId:string, list:Task[])=>{ setTasksForSelected(list); await AsyncStorage.setItem(TASKS_KEY(driverId), JSON.stringify(list)); };
-  const addTask = async()=>{
-    if(!selectedDriver) { Alert.alert("Najpierw wybierz kierowcę"); return; }
-    const title = taskTitle.trim(); if(!title) { Alert.alert("Brak tytułu","Podaj nazwę zadania."); return; }
-    const t:Task = { id: Math.random().toString(36).slice(2), title, address: taskAddress.trim(), description: taskDesc.trim(), createdAt: new Date().toISOString(), done:false };
-    const list=[t, ...tasksForSelected]; await saveTasksFor(selectedDriver, list);
-    setTaskTitle(""); setTaskAddress(""); setTaskDesc(""); Alert.alert("Dodano","Zadanie przydzielone kierowcy.");
-  };
+  const [taskAddr, setTaskAddr]   = useState("");
+  const [taskDesc, setTaskDesc]   = useState("");
 
+  const [loading, setLoading] = useState(false);
+
+  // ===== pobranie danych z Supabase (drivers, trucks, assignments, defects) =====
+  useEffect(() => {
+    (async () => {
+      if (!cloud.enabled || !cloud.client) return;
+      setLoading(true);
+      try {
+        const [up, t, a, d] = await Promise.all([
+          cloud.client.from("users_public").select("*").eq("role", "driver").order("name"),
+          cloud.client.from("trucks").select("*").order("reg"),
+          cloud.client.from("assignments").select("*"),
+          cloud.client.from("defects").select("*").order("time", { ascending: false }),
+        ]);
+        if (!up.error && up.data) {
+          setDrivers(up.data.map((u: any) => ({ id: u.id, name: u.name, email: u.email })));
+        }
+        if (!t.error && t.data) setTrucks(t.data as any);
+        if (!a.error && a.data) setAssignments(a.data as any);
+        if (!d.error && d.data) setDefects(d.data as any);
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // ===== akcje =====
+  async function saveAssignment() {
+    if (!selDriver || !selTruck) return Alert.alert("Wybierz kierowcę i ciężarówkę");
+    if (!cloud.enabled || !cloud.client) return;
+    const { error } = await cloud.client
+      .from("assignments")
+      .upsert({ driver_id: selDriver, truck_id: selTruck }, { onConflict: "driver_id" });
+    if (error) return Alert.alert("Błąd", error.message);
+    const { data } = await cloud.client.from("assignments").select("*");
+    if (data) setAssignments(data as any);
+    Alert.alert("OK", "Przypisanie zapisane");
+  }
+
+  async function setDefectStatus(id: string, status: Defect["status"]) {
+    if (!cloud.enabled || !cloud.client) return;
+    const archived = status === "Naprawione";
+    const { error } = await cloud.client.from("defects").update({ status, archived }).eq("id", id);
+    if (error) return Alert.alert("Błąd", error.message);
+    const { data } = await cloud.client.from("defects").select("*").order("time", { ascending: false });
+    if (data) setDefects(data as any);
+  }
+
+  async function addTask() {
+    if (!taskFor || !taskTitle) return Alert.alert("Wpisz tytuł i wybierz kierowcę");
+    if (!cloud.enabled || !cloud.client) return;
+    const { error } = await cloud.client
+      .from("tasks")
+      .insert({ driver_id: taskFor, title: taskTitle, address: taskAddr || null, description: taskDesc || null });
+    if (error) return Alert.alert("Błąd", error.message);
+    setTaskTitle(""); setTaskAddr(""); setTaskDesc("");
+    const { data } = await cloud.client
+      .from("tasks").select("*").eq("driver_id", taskFor).order("created_at", { ascending: false });
+    if (data) setTasks(data as any);
+  }
+
+  async function loadTasksFor(driverId: string) {
+    setTaskFor(driverId);
+    if (!cloud.enabled || !cloud.client) return;
+    const { data } = await cloud.client
+      .from("tasks").select("*").eq("driver_id", driverId).order("created_at", { ascending: false });
+    if (data) setTasks(data as any);
+  }
+
+  // ===== UI =====
   return (
-    <SafeAreaView style={[s.screen,s.safe]}>
-      <View style={s.header}><Text style={s.headerTitle}>Panel administratora</Text></View>
+    <ScrollView style={s.screen} contentContainerStyle={s.container}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>
+          Panel admina {Platform.OS === "ios" ? "" : "🛠️"}
+        </Text>
+      </View>
 
-      <View style={s.tabs}>{(["Przypisania","Postępy","Defekty","Zadania"] as const).map(t => (
-        <Pressable key={t} onPress={()=>setAdminTab(t)} style={[s.tab, adminTab===t && s.tabActive]}>
-          <Text style={s.tabText}>{t}</Text>
+      {/* segmented (jak w DEMO) */}
+      <View style={styles.segments}>
+        <Pressable onPress={() => setTab("assign")} style={[styles.segment, tab === "assign" && styles.segmentActive]}>
+          <Text style={[styles.segmentText, tab === "assign" && styles.segmentTextActive]}>Przypisania</Text>
         </Pressable>
-      ))}</View>
+        <Pressable onPress={() => setTab("defects")} style={[styles.segment, tab === "defects" && styles.segmentActive]}>
+          <Text style={[styles.segmentText, tab === "defects" && styles.segmentTextActive]}>Defekty</Text>
+        </Pressable>
+        <Pressable onPress={() => setTab("tasks")} style={[styles.segment, tab === "tasks" && styles.segmentActive]}>
+          <Text style={[styles.segmentText, tab === "tasks" && styles.segmentTextActive]}>Zadania</Text>
+        </Pressable>
+      </View>
 
-      <ScrollView style={s.container}>
-        {adminTab==="Przypisania" && (
-          <View>
-            <View style={s.card}>
-              <Text style={{color:C.text,fontWeight:"700",fontSize:16}}>Przypisz pojazd do kierowcy</Text>
-              <Text style={[s.label,{marginTop:10}]}>Kierowca</Text>
-              <PickerSimple value={selectedDriver || ""} onChange={setSelectedDriver} options={drivers.map(d=>({ label:`${d.name} (${d.email})`, value:d.id }))} />
-              <Text style={[s.label,{marginTop:10}]}>Ciężarówka</Text>
-              <PickerSimple value={selectedTruck || ""} onChange={setSelectedTruck} options={TRUCKS.map(t=>({ label:`${t.reg}${t.trailerId?` / ${t.trailerId}`:""}`, value:t.id }))} />
-              <View style={{height:12}} />
-              <Pressable onPress={assign} style={[s.button,s.buttonPrimary]}><Text style={s.buttonText}>Zapisz przypisanie</Text></Pressable>
-            </View>
-            <View style={s.card}>
-              <Text style={{color:C.text,fontWeight:"700"}}>Aktualne przypisania</Text>
-              {drivers.map(d=>{ const tId = getAssignedTruckId(d.id); const truck = TRUCKS.find(t=>t.id===tId); return (
-                <View key={d.id} style={[s.row,{marginTop:10}]}>                    
-                  <Text style={{color:C.text,flex:1}}>{d.name}</Text>
-                  <View style={s.tag}><Text style={s.tagText}>{truck? `${truck.reg} / ${truck.trailerId||"—"}` : "— brak —"}</Text></View>
-                </View>
-              ); })}
-            </View>
+      {tab === "assign" && (
+        <View style={s.card}>
+          <Text style={[s.label, { marginBottom: 8 }]}>Kierowcy</Text>
+          <View style={styles.rowWrap}>
+            {drivers.map((d) => (
+              <Pressable
+                key={d.id}
+                onPress={() => setSelDriver(d.id)}
+                style={[styles.chip, selDriver === d.id && styles.chipActive]}
+              >
+                <Text style={styles.chipText}>{d.name}</Text>
+              </Pressable>
+            ))}
           </View>
-        )}
 
-        {adminTab==="Postępy" && (
-          <View>
-            <View style={s.card}><View style={s.row}><Text style={{color:C.text,fontWeight:"700",fontSize:16}}>Postępy kierowców</Text><Pressable onPress={loadProgress} style={[s.button]}><Text style={{color:C.text}}>Odśwież</Text></Pressable></View></View>
-            {drivers.map(d=>{ const tId = getAssignedTruckId(d.id); const truck = TRUCKS.find(t=>t.id===tId); const st = progress[d.id]; const ok = st?.items?.filter(i=>i.status==="OK").length || 0; const df = st?.items?.filter(i=>i.status==="DEFECT").length || 0; let odoStart="—", odoEnd="—"; if(truck && st?.odoByTruck && st.odoByTruck[truck.reg]){ const rec = st.odoByTruck[truck.reg]; odoStart = rec.start || "—"; odoEnd = st?.endInfo?.odoEnd || rec.end || "—"; } else { odoStart = st?.startInfo?.odoStart || "—"; odoEnd = st?.endInfo?.odoEnd || "—"; } const mileage = (Number(odoEnd)||0) - (Number(odoStart)||0); const today = todayStr(); const clockIn = st?.attendance?.[today]?.clockInISO; const clockOut = st?.attendance?.[today]?.clockOutISO; return (
-              <View key={d.id} style={[s.card,{marginTop:12}]}>                  
-                <View style={s.row}>
-                  <Text style={{color:C.text,fontWeight:"700"}}>{d.name}</Text>
-                  <View style={s.tag}><Text style={s.tagText}>{truck? `${truck.reg} / ${truck.trailerId||"—"}` : "— brak —"}</Text></View>
-                </View>
-                <View style={{flexDirection:"row", gap:8, marginTop:8}}>
-                  <View style={s.tag}><Text style={s.tagText}>Clock in: {clockIn? new Date(clockIn).toLocaleTimeString(): "—"}</Text></View>
-                  <View style={s.tag}><Text style={s.tagText}>Clock out: {clockOut? new Date(clockOut).toLocaleTimeString(): "—"}</Text></View>
-                  <View style={s.tag}><Text style={s.tagText}>✓ OK: {ok}</Text></View>
-                  <View style={s.tag}><Text style={s.tagText}>✗ DEFECT: {df}</Text></View>
-                  <View style={s.tag}><Text style={s.tagText}>Odo: {odoStart} → {odoEnd} ({isNaN(mileage)?"—":mileage})</Text></View>
+          <Text style={[s.label, { marginTop: 12, marginBottom: 8 }]}>Ciężarówki</Text>
+          <View style={styles.rowWrap}>
+            {trucks.map((t) => (
+              <Pressable
+                key={t.id}
+                onPress={() => setSelTruck(t.id)}
+                style={[styles.chip, selTruck === t.id && styles.chipActive]}
+              >
+                <Text style={styles.chipText}>{t.reg}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable style={[s.button, s.buttonPrimary]} onPress={saveAssignment}>
+            <Text style={s.buttonText}>Zapisz przypisanie</Text>
+          </Pressable>
+
+          <View style={{ height: 10 }} />
+
+          <Text style={[s.label, { marginBottom: 8 }]}>Aktualne przypisania</Text>
+          {assignments.map((a) => {
+            const u = drivers.find((x) => x.id === a.driver_id);
+            const t = trucks.find((x) => x.id === a.truck_id);
+            return (
+              <View key={a.driver_id} style={styles.row}>
+                <Text style={styles.rowLeft}>{u?.name} ({u?.email})</Text>
+                <Text style={styles.rowRight}>{t?.reg ?? "—"}</Text>
+              </View>
+            );
+          })}
+          {!assignments.length && <Text style={{ color: C.sub }}>Brak przypisań</Text>}
+        </View>
+      )}
+
+      {tab === "defects" && (
+        <View style={s.card}>
+          <Text style={[s.label, { marginBottom: 8 }]}>Aktywne defekty</Text>
+          {defects.map((d) => {
+            const u = drivers.find((x) => x.id === d.driver_id);
+            const t = trucks.find((x) => x.id === d.truck_id);
+            return (
+              <View key={d.id} style={{ marginBottom: 12, borderBottomColor: C.border, borderBottomWidth: 1, paddingBottom: 8 }}>
+                <Text style={{ color: C.text, fontWeight: "700" }}>
+                  {new Date(d.time).toLocaleString()} • {t?.reg ?? "—"} • {u?.name ?? ""}
+                </Text>
+                <Text style={{ color: C.sub, marginTop: 2 }}>{d.area}{d.description ? ` — ${d.description}` : ""}</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                  <Pressable style={[s.button, styles.btnWarn]} onPress={() => setDefectStatus(d.id, "W trakcie")}>
+                    <Text style={s.buttonText}>W trakcie</Text>
+                  </Pressable>
+                  <Pressable style={[s.button, s.buttonPrimary]} onPress={() => setDefectStatus(d.id, "Naprawione")}>
+                    <Text style={s.buttonText}>Naprawione</Text>
+                  </Pressable>
                 </View>
               </View>
-            ); })}
+            );
+          })}
+          {!defects.length && <Text style={{ color: C.sub }}>Brak zgłoszeń</Text>}
+        </View>
+      )}
+
+      {tab === "tasks" && (
+        <View style={s.card}>
+          <Text style={[s.label, { marginBottom: 8 }]}>Nowe zadanie</Text>
+
+          <Text style={s.label}>Dla kierowcy</Text>
+          <View style={styles.rowWrap}>
+            {drivers.map((d) => (
+              <Pressable
+                key={d.id}
+                onPress={() => loadTasksFor(d.id)}
+                style={[styles.chip, taskFor === d.id && styles.chipActive]}
+              >
+                <Text style={styles.chipText}>{d.name}</Text>
+              </Pressable>
+            ))}
           </View>
-        )}
 
-        {adminTab==="Defekty" && (
-          <AdminDefects drivers={drivers} assignments={assignments} />
-        )}
+          <Text style={[s.label, { marginTop: 10 }]}>Tytuł</Text>
+          <TextInput value={taskTitle} onChangeText={setTaskTitle} style={s.input} placeholder="Nazwa zadania" placeholderTextColor={C.sub} />
 
-        {adminTab==="Zadania" && (
-          <View>
-            <View style={s.card}>
-              <Text style={{color:C.text,fontWeight:"700",fontSize:16}}>Nowe zadanie dla kierowcy</Text>
-              <Text style={[s.label,{marginTop:10}]}>Kierowca</Text>
-              <PickerSimple value={selectedDriver} onChange={setSelectedDriver} options={drivers.map(d=>({ label:`${d.name} (${d.email})`, value:d.id }))} />
-              <Text style={[s.label,{marginTop:10}]}>Tytuł / Krótki opis</Text>
-              <TextInput style={s.input} placeholder="np. Odbiór palet w ABC Ltd." placeholderTextColor={C.sub} value={taskTitle} onChangeText={setTaskTitle} />
-              <View style={{height:8}} />
-              <Text style={s.label}>Adres</Text>
-              <TextInput style={s.input} placeholder="np. 10 Downing St, London" placeholderTextColor={C.sub} value={taskAddress} onChangeText={setTaskAddress} />
-              <View style={{height:8}} />
-              <Text style={s.label}>Szczegóły (opcjonalnie)</Text>
-              <TextInput style={[s.input,{minHeight:70}]} multiline placeholder="np. Godzina załadunku 10:00" placeholderTextColor={C.sub} value={taskDesc} onChangeText={setTaskDesc} />
-              <View style={{height:10}} />
-              <Pressable onPress={addTask} style={[s.button,s.buttonPrimary]}><Text style={s.buttonText}>Dodaj zadanie</Text></Pressable>
-            </View>
+          <Text style={[s.label, { marginTop: 10 }]}>Adres</Text>
+          <TextInput value={taskAddr} onChangeText={setTaskAddr} style={s.input} placeholder="Adres (opcjonalnie)" placeholderTextColor={C.sub} />
 
-            <View style={s.card}>
-              <Text style={{color:C.text,fontWeight:"700"}}>Zadania wybranego kierowcy</Text>
-              {tasksForSelected.length===0 && <Text style={{color:C.sub, marginTop:8}}>Brak zadań.</Text>}
-              {tasksForSelected.map(t=> (
-                <View key={t.id} style={[s.card,{padding:12}]}>                  
-                  <Text style={{color:C.text,fontWeight:"600"}}>{t.title}</Text>
-                  {t.address? <Text style={{color:C.sub, marginTop:2}}>📍 {t.address}</Text>: null}
-                  {t.description? <Text style={{color:C.sub, marginTop:2}}>{t.description}</Text>: null}
-                  <Text style={{color:C.sub, marginTop:6}}>Dodano: {new Date(t.createdAt).toLocaleString()}</Text>
+          <Text style={[s.label, { marginTop: 10 }]}>Opis</Text>
+          <TextInput value={taskDesc} onChangeText={setTaskDesc} style={[s.input, { height: 90 }]} multiline placeholder="Opis (opcjonalnie)" placeholderTextColor={C.sub} />
+
+          <Pressable style={[s.button, s.buttonPrimary]} onPress={addTask}>
+            <Text style={s.buttonText}>Dodaj zadanie</Text>
+          </Pressable>
+
+          {taskFor ? (
+            <>
+              <View style={{ height: 12 }} />
+              <Text style={[s.label, { marginBottom: 8 }]}>Lista zadań</Text>
+              {tasks.map((t) => (
+                <View key={t.id} style={styles.row}>
+                  <Text style={styles.rowLeft}>{new Date(t.created_at).toLocaleString()} • {t.title}</Text>
+                  <Text style={styles.rowRight}>{t.done ? "✓" : ""}</Text>
                 </View>
               ))}
-            </View>
-          </View>
-        )}
+              {!tasks.length && <Text style={{ color: C.sub }}>Brak zadań dla wybranego kierowcy</Text>}
+            </>
+          ) : (
+            <Text style={{ color: C.sub, marginTop: 8 }}>Wybierz kierowcę, aby zobaczyć jego zadania</Text>
+          )}
+        </View>
+      )}
 
-        <Pressable onPress={onLogout} style={[s.button,s.buttonDanger]}><Text style={s.buttonText}>Wyloguj</Text></Pressable>
-      </ScrollView>
-    </SafeAreaView>
+      {loading && <ActivityIndicator style={{ marginTop: 8 }} />}
+    </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  segments: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  segment: {
+    flex: 1, paddingVertical: 10, borderRadius: 12,
+    borderWidth: 1, borderColor: C.border, alignItems: "center",
+    backgroundColor: "#0b1220",
+  },
+  segmentActive: { backgroundColor: "#111827", borderColor: C.accent },
+  segmentText: { color: C.sub, fontWeight: "600" },
+  segmentTextActive: { color: C.text },
+  rowWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  chip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: C.border, backgroundColor: "#0b1220" },
+  chipActive: { backgroundColor: C.accent, borderColor: C.accent },
+  chipText: { color: "#fff" },
+  row: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+  rowLeft: { color: C.text },
+  rowRight: { color: C.text },
+  btnWarn: { backgroundColor: "#f59e0b", borderColor: "#f59e0b" },
+});

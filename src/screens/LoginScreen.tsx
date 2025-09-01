@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { SafeAreaView, View, Text, TextInput, Pressable, ScrollView, Platform } from "react-native";
 import { styles as s, COLORS as C } from "../constants";
 
+
 export default function LoginScreen({ onLogin }:{ onLogin:(email:string,pass:string)=>void }){
   const [email,setEmail] = useState("admin@demo.com");
   const [pass,setPass] = useState("admin");
