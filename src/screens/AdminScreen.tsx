@@ -14,7 +14,7 @@ import { styles as s, COLORS as C } from "../constants";
 import { cloud } from "../backend/client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STORAGE } from "../storage";
-import { useNavigation } from "@react-navigation/native";
+import * as Updates from "expo-updates";
 
 type Driver = { id: string; name: string; email: string };
 type Truck  = { id: string; reg: string; trailer_id?: string | null };
@@ -51,7 +51,6 @@ export default function AdminScreen() {
 
   const [loading, setLoading] = useState(false);
 
-  const nav = useNavigation();
 
   // ===== pobranie danych z Supabase (drivers, trucks, assignments, defects) =====
   useEffect(() => {
@@ -124,17 +123,16 @@ export default function AdminScreen() {
 
   // ===== wylogowanie =====
   const handleLogout = async () => {
-    try {
-      await cloud.client?.auth.signOut();
-    } catch (e) {
-      console.log("signOut error", e);
-    } finally {
-      try { await AsyncStorage.removeItem(STORAGE.SESSION); } catch {}
-      // reset do ekranu logowania (React Navigation)
-      // @ts-ignore
-      nav.reset?.({ index: 0, routes: [{ name: "Login" }] });
-    }
-  };
+  try {
+    await cloud.client?.auth.signOut();
+  } catch (e) {
+    console.log("signOut error", e);
+  } finally {
+    try { await AsyncStorage.removeItem(STORAGE.SESSION); } catch {}
+    // Najprostsze i bez zależności: przeładuj appkę ⇒ pokaże login (bo nie będzie sesji)
+    try { await Updates.reloadAsync(); } catch (e) { console.log("reload failed", e); }
+  }
+};
 
   // ===== UI =====
   return (
